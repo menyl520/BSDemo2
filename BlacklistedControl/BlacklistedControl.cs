@@ -14,6 +14,7 @@ namespace Suprema
         {
             List<KeyValuePair<string, Action<IntPtr, UInt32, bool>>> functionList = new List<KeyValuePair<string, Action<IntPtr, uint, bool>>>();
             functionList.Add(new KeyValuePair<string, Action<IntPtr, uint, bool>>("Get access group", getAccessGroup));
+            functionList.Add(new KeyValuePair<string, Action<IntPtr, uint, bool>>("Remove access group", removeAccessGroup));
             functionList.Add(new KeyValuePair<string, Action<IntPtr, uint, bool>>("Set access settings", InitAccessGroup));
             functionList.Add(new KeyValuePair<string, Action<IntPtr, uint, bool>>("Add blacklisted user", AddBlacklistedUser));          
 
@@ -95,6 +96,64 @@ namespace Suprema
             else
             {
                 Console.WriteLine(">>> There is no access group in the device.");
+            }
+        }
+
+        public void removeAccessGroup(IntPtr sdkContext, uint deviceID, bool isMasterDevice)
+        {
+            BS2ErrorCode result = BS2ErrorCode.BS_SDK_SUCCESS;
+
+            Console.WriteLine("Do you want to remove all access groups? [Y/n]");
+            Console.Write(">>>> ");
+            if (Util.IsYes())
+            {
+                Console.WriteLine("Trying to remove all access gruops from device.");
+                result = (BS2ErrorCode)API.BS2_RemoveAllAccessGroup(sdkContext, deviceID);
+            }
+            else
+            {
+                Console.WriteLine("Enter the ID of the access group which you want to remove: [ID_1,ID_2 ...]");
+                Console.Write(">>>> ");
+                char[] delimiterChars = { ' ', ',', '.', ':', '\t' };
+                string[] accessGroupIDs = Console.ReadLine().Split(delimiterChars);
+                List<UInt32> accessGroupIDList = new List<UInt32>();
+
+                foreach (string accessGroupID in accessGroupIDs)
+                {
+                    if (accessGroupID.Length > 0)
+                    {
+                        UInt32 item;
+                        if (UInt32.TryParse(accessGroupID, out item))
+                        {
+                            accessGroupIDList.Add(item);
+                        }
+                    }
+                }
+
+                if (accessGroupIDList.Count > 0)
+                {
+                    IntPtr accessGroupIDObj = Marshal.AllocHGlobal(4 * accessGroupIDList.Count);
+                    IntPtr curAccessGroupIDObj = accessGroupIDObj;
+                    foreach (UInt32 item in accessGroupIDList)
+                    {
+                        Marshal.WriteInt32(curAccessGroupIDObj, (Int32)item);
+                        curAccessGroupIDObj = (IntPtr)((long)curAccessGroupIDObj + 4);
+                    }
+
+                    Console.WriteLine("Trying to remove access gruops from device.");
+                    result = (BS2ErrorCode)API.BS2_RemoveAccessGroup(sdkContext, deviceID, accessGroupIDObj, (UInt32)accessGroupIDList.Count);
+
+                    Marshal.FreeHGlobal(accessGroupIDObj);
+                }
+                else
+                {
+                    Console.WriteLine("Invalid parameter");
+                }
+            }
+
+            if (result != BS2ErrorCode.BS_SDK_SUCCESS)
+            {
+                Console.WriteLine("Got error({0}).", result);
             }
         }
 
@@ -279,6 +338,7 @@ namespace Suprema
             BS2User user = new BS2User();
             string userID = "BL123";
             string name = "Test Blacklisted";
+            //TODO: change to map to your source
             string imagePath = @"C:\Users\YeeLing\Desktop\Potrait\YeeLing.png";
 
             // Load the image into a byte array

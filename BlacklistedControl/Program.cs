@@ -21,7 +21,7 @@ namespace BSDemo
         static void Main(string[] args)
         {
             Program program = new Program();
-            program.Title = "Test for access control";
+            program.Title = "Test for blacklisted user control";
             program.run();
         }
     }
