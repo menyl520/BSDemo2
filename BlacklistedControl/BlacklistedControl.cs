@@ -14,6 +14,7 @@ namespace Suprema
         {
             List<KeyValuePair<string, Action<IntPtr, UInt32, bool>>> functionList = new List<KeyValuePair<string, Action<IntPtr, uint, bool>>>();
             functionList.Add(new KeyValuePair<string, Action<IntPtr, uint, bool>>("Add door", setDoor));
+            functionList.Add(new KeyValuePair<string, Action<IntPtr, uint, bool>>("Get door", getDoor));
             functionList.Add(new KeyValuePair<string, Action<IntPtr, uint, bool>>("Get access group", getAccessGroup));
             functionList.Add(new KeyValuePair<string, Action<IntPtr, uint, bool>>("Remove access group", removeAccessGroup));
             functionList.Add(new KeyValuePair<string, Action<IntPtr, uint, bool>>("Set access settings", InitAccessGroup));
@@ -166,7 +167,7 @@ namespace Suprema
             //Console.WriteLine("How many doors do you want to set? [1(default)-128]");
             //Console.Write(">>>> ");
             char[] delimiterChars = { ' ', ',', '.', ':', '\t' };
-            int amount = Util.GetInput(1);
+            int amount = 1;
             List<BS2Door> doorList = new List<BS2Door>();
 
             for (int idx = 0; idx < amount; ++idx)
@@ -417,6 +418,84 @@ namespace Suprema
             Marshal.FreeHGlobal(doorListObj);
         }
 
+        public void getDoor(IntPtr sdkContext, UInt32 deviceID, bool isMasterDevice)
+        {
+            IntPtr doorObj = IntPtr.Zero;
+            UInt32 numDoor = 0;
+            BS2ErrorCode result = BS2ErrorCode.BS_SDK_SUCCESS;
+
+            Console.WriteLine("Do you want to get all doors? [Y/n]");
+            Console.Write(">>>> ");
+            if (Util.IsYes())
+            {
+                Console.WriteLine("Trying to get all doors from device.");
+                result = (BS2ErrorCode)API.BS2_GetAllDoor(sdkContext, deviceID, out doorObj, out numDoor);
+            }
+            else
+            {
+                Console.WriteLine("Enter the ID of the door which you want to get: [ID_1,ID_2 ...]");
+                Console.Write(">>>> ");
+                char[] delimiterChars = { ' ', ',', '.', ':', '\t' };
+                string[] doorIDs = Console.ReadLine().Split(delimiterChars);
+                List<UInt32> doorIDList = new List<UInt32>();
+
+                foreach (string doorID in doorIDs)
+                {
+                    if (doorID.Length > 0)
+                    {
+                        UInt32 item;
+                        if (UInt32.TryParse(doorID, out item))
+                        {
+                            doorIDList.Add(item);
+                        }
+                    }
+                }
+
+                if (doorIDList.Count > 0)
+                {
+                    IntPtr doorIDObj = Marshal.AllocHGlobal(4 * doorIDList.Count);
+                    IntPtr curDoorIDObj = doorIDObj;
+                    foreach (UInt32 item in doorIDList)
+                    {
+                        Marshal.WriteInt32(curDoorIDObj, (Int32)item);
+                        curDoorIDObj = (IntPtr)((long)curDoorIDObj + 4);
+                    }
+
+                    Console.WriteLine("Trying to get doors from device.");
+                    result = (BS2ErrorCode)API.BS2_GetDoor(sdkContext, deviceID, doorIDObj, (UInt32)doorIDList.Count, out doorObj, out numDoor);
+
+                    Marshal.FreeHGlobal(doorIDObj);
+                }
+                else
+                {
+                    Console.WriteLine("Invalid parameter");
+                }
+            }
+
+            if (result != BS2ErrorCode.BS_SDK_SUCCESS)
+            {
+                Console.WriteLine("Got error({0}).", result);
+            }
+            else if (numDoor > 0)
+            {
+                IntPtr curDoorObj = doorObj;
+                int structSize = Marshal.SizeOf(typeof(BS2Door));
+
+                for (int idx = 0; idx < numDoor; ++idx)
+                {
+                    BS2Door item = (BS2Door)Marshal.PtrToStructure(curDoorObj, typeof(BS2Door));
+                    print(sdkContext, item);
+                    curDoorObj = (IntPtr)((long)curDoorObj + structSize);
+                }
+
+                API.BS2_ReleaseObject(doorObj);
+            }
+            else
+            {
+                Console.WriteLine(">>> There is no door in the device.");
+            }
+        }
+
         public void InitAccessGroup(IntPtr sdkContext, uint deviceID, bool isMasterDevice)
         {
             bool go = false;
@@ -551,33 +630,7 @@ namespace Suprema
         private BS2ErrorCode AddAccessSchedule(IntPtr sdkContext, uint deviceID, bool isMasterDevice)
         {
             List<CSP_BS2Schedule> accessScheduleList = new List<CSP_BS2Schedule>();
-            
-            #region FreeAccess
-
-            //CSP_BS2Schedule freeAccessSchedule = Util.AllocateStructure<CSP_BS2Schedule>();
-            //freeAccessSchedule.id = 1;
-            //byte[] accessScheduleArray = Encoding.UTF8.GetBytes("Always");
-            //Array.Clear(freeAccessSchedule.name, 0, BS2Environment.BS2_MAX_SCHEDULE_NAME_LEN);
-            //Array.Copy(accessScheduleArray, freeAccessSchedule.name, accessScheduleArray.Length);
-            //freeAccessSchedule.numHolidaySchedules = 0;
-            //freeAccessSchedule.isDaily = 1;
-
-            //freeAccessSchedule.scheduleUnion.daily.startDate = Convert.ToUInt32(Util.ConvertToUnixTimestamp(new DateTime(2023, 1, 1)));
-            //freeAccessSchedule.scheduleUnion.daily.numDays = 7;
-            //for (byte loop = 0; loop < freeAccessSchedule.scheduleUnion.daily.numDays; ++loop)
-            //{
-            //    freeAccessSchedule.scheduleUnion.daily.schedule[loop].numPeriods = (byte)1;
-
-            //    for (byte z = 0; z < freeAccessSchedule.scheduleUnion.daily.schedule[loop].numPeriods; ++z)
-            //    {
-            //        freeAccessSchedule.scheduleUnion.daily.schedule[loop].periods[z].startTime = (UInt16)(60 * Convert.ToUInt16("00") + Convert.ToUInt16("00"));
-            //        freeAccessSchedule.scheduleUnion.daily.schedule[loop].periods[z].endTime = (UInt16)(60 * Convert.ToUInt16("23") + Convert.ToUInt16("59"));
-            //    }
-            //}
-            //accessScheduleList.Add(freeAccessSchedule);
-
-            #endregion
-
+          
             #region NoAccess
 
             CSP_BS2Schedule noAccessSchedule = Util.AllocateStructure<CSP_BS2Schedule>();
@@ -872,5 +925,46 @@ namespace Suprema
                 Console.WriteLine("     |  |--date[{0}] recurrence[{1}]", Util.ConvertFromUnixTimestamp(holidayGroup.holidays[loop].date).ToString("yyyy-MM-dd"), holidayGroup.holidays[loop].recurrence);
             }
         }
+
+        void print(IntPtr sdkContext, BS2Door door)
+        {
+            Console.WriteLine(">>>> Door ID[{0, 10}] name[{1}]", door.doorID, Encoding.UTF8.GetString(door.name).TrimEnd('\0'));
+            Console.WriteLine("     |--entryDeviceID[{0}]", door.entryDeviceID);
+            Console.WriteLine("     |--exitDeviceID[{0}]", door.exitDeviceID);
+            Console.WriteLine("     |--relay[ioDeviceID[{0}] port[{1}]]", door.relay.deviceID, door.relay.port);
+            Console.WriteLine("     |--sensor[ioDeviceID[{0}] port[{1}] switchType[{2}]], apbUseDoorSensor[{3}]", door.sensor.deviceID, door.sensor.port, (BS2SwitchTypeEnum)door.sensor.switchType, door.sensor.apbUseDoorSensor);
+            Console.WriteLine("     |--exitButton[ioDeviceID[{0}] port[{1}] switchType[{2}]]", door.button.deviceID, door.button.port, (BS2SwitchTypeEnum)door.button.switchType);
+            Console.WriteLine("     |--autoLockTimeout[{0}ms]", door.autoLockTimeout);
+            Console.WriteLine("     |--heldOpenTimeout[{0}ms]", door.heldOpenTimeout);
+            Console.WriteLine("     |--unlockFlags[{0}]", (BS2DoorFlagEnum)door.unlockFlags);
+            Console.WriteLine("     |--lockFlags[{0}]", (BS2DoorFlagEnum)door.lockFlags);
+            Console.WriteLine("     |--unconditionalLock[{0}]", (BS2DoorAlarmFlagEnum)door.unconditionalLock);
+            Console.WriteLine("     |--forcedOpenAlarm");
+            for (int idx = 0; idx < BS2Environment.BS2_MAX_FORCED_OPEN_ALARM_ACTION; ++idx)
+            {
+                BS2ActionTypeEnum actionType = (BS2ActionTypeEnum)door.forcedOpenAlarm[idx].type;
+                Console.WriteLine("     |  |--ID[{0}] Type[{1}] {2}", door.forcedOpenAlarm[idx].deviceID, (BS2ActionTypeEnum)door.forcedOpenAlarm[idx].type, Util.getActionMsg(door.forcedOpenAlarm[idx]));
+            }
+
+            Console.WriteLine("     |--heldOpenAlarm");
+            for (int idx = 0; idx < BS2Environment.BS2_MAX_HELD_OPEN_ALARM_ACTION; ++idx)
+            {
+                BS2ActionTypeEnum actionType = (BS2ActionTypeEnum)door.heldOpenAlarm[idx].type;
+                Console.WriteLine("     |  |--ID[{0}] Type[{1}] {2}", door.heldOpenAlarm[idx].deviceID, (BS2ActionTypeEnum)door.heldOpenAlarm[idx].type, Util.getActionMsg(door.heldOpenAlarm[idx]));
+            }
+            Console.WriteLine("     |--dualAuthScheduleID[{0}]", door.dualAuthScheduleID);
+            Console.WriteLine("     |--dualAuthDevice[{0}]", door.dualAuthDevice);
+            Console.WriteLine("     |--dualAuthApprovalType[{0}]", (BS2DualAuthApprovalEnum)door.dualAuthApprovalType);
+            Console.WriteLine("     |--dualAuthTimeout[{0}ms]", door.dualAuthTimeout);
+            if (door.numDualAuthApprovalGroups > 0)
+            {
+                Console.WriteLine("     |--dualAuthApprovalGroupID");
+                for (int idx = 0; idx < door.numDualAuthApprovalGroups; ++idx)
+                {
+                    Console.WriteLine("     |  |--dual auth approval group id[{0}]", door.dualAuthApprovalGroupID[idx]);
+                }
+            }
+        }
+
     }
 }
